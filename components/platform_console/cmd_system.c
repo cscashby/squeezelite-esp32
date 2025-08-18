@@ -28,9 +28,10 @@
 #include "platform_esp32.h"
 #include "platform_config.h"
 #include "esp_sleep.h"
-#include "messaging.h"				  
+#include "messaging.h"			  
 #include "platform_console.h"
 #include "tools.h"
+#include "../driver_bt/bt_app_core.h"
 
 #ifdef CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS
 #pragma message("Runtime stats enabled")
@@ -75,6 +76,7 @@ static void register_set_services();
 #if WITH_TASKS_INFO
 static void register_tasks();
 #endif
+static void register_bt_forget();
 extern BaseType_t network_manager_task;
 FILE * system_open_memstream(const char * cmdname,char **buf,size_t *buf_size){
 	FILE *f = open_memstream(buf, buf_size);
@@ -103,6 +105,7 @@ void register_system()
     register_deep_sleep();
     register_light_sleep();
 #endif
+	register_bt_forget();
 }
 void simple_restart()
 {
@@ -184,7 +187,7 @@ esp_err_t guided_boot(esp_partition_subtype_t partition_subtype)
 	esp_err_t err = ESP_OK;
     // log_send_messaging(MESSAGING_INFO, "Looking for partition type %u",partition_subtype);
     const esp_partition_t *partition;
-	esp_partition_iterator_t it = esp_partition_find(ESP_PARTITION_TYPE_APP, partition_subtype, NULL);
+		esp_partition_iterator_t it = esp_partition_find(ESP_PARTITION_TYPE_APP, partition_subtype, NULL);
 
 	if(it == NULL){
 		log_send_messaging(MESSAGING_ERROR,"Reboot failed. Partitions error");
@@ -318,15 +321,15 @@ static int dump_heap(int argc, char **argv)
 static int heap_size(int argc, char **argv)
 {
     // ESP_LOGI(TAG,"Heap internal:%zu (min:%zu) (largest block:%zu)\nexternal:%zu (min:%zu) (largest block:%zd)\ndma :%zu (min:%zu) (largest block:%zd)",
-	// 					heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
-	// 					heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL),
-	// 					heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
+	// 						heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+	// 						heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL),
+	// 						heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
     //                     heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
-	// 					heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM),
-	// 					heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM),
+	// 						heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM),
+	// 						heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM),
     //                     heap_caps_get_free_size(MALLOC_CAP_DMA),
-	// 					heap_caps_get_minimum_free_size(MALLOC_CAP_DMA),
-	// 					heap_caps_get_largest_free_block(MALLOC_CAP_DMA));
+	// 						heap_caps_get_minimum_free_size(MALLOC_CAP_DMA),
+	// 						heap_caps_get_largest_free_block(MALLOC_CAP_DMA));
     cmd_send_messaging(argv[0],MESSAGING_INFO,"Heap internal:%zu (min:%zu) (largest block:%zu)\nexternal:%zu (min:%zu) (largest block:%zd)\ndma :%zu (min:%zu) (largest block:%zd)",
 						heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
 						heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL),
@@ -852,3 +855,20 @@ static void register_light_sleep()
     ESP_ERROR_CHECK( esp_console_cmd_register(&cmd) );
 }
 #endif
+
+static int bt_forget_bonds_cmd(int argc, char **argv)
+{
+    bt_forget_bonds();
+    return 0;
+}
+
+static void register_bt_forget()
+{
+    const esp_console_cmd_t cmd = {
+        .command = "bt_forget",
+        .help = "Forget all bonded bluetooth devices",
+        .hint = NULL,
+        .func = &bt_forget_bonds_cmd,
+    };
+    ESP_ERROR_CHECK( esp_console_cmd_register(&cmd) );
+}

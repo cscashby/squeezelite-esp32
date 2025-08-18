@@ -73,5 +73,6 @@ bool bt_app_work_dispatch(bt_app_cb_t p_cback, uint16_t event, void *p_params, i
 void bt_app_task_start_up(bt_av_hdl_stack_evt_t* handler);
 
 void bt_app_task_shut_down(void);
+void bt_forget_bonds(void);
 
 #endif /* __BT_APP_CORE_H__ */

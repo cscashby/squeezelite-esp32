@@ -179,3 +179,40 @@ void bt_app_task_shut_down(void)
 {
 	running = false;
 }
+
+void bt_forget_bonds(void)
+{
+    ESP_LOGD(TAG, "Removing all bonded Bluetooth devices.");
+
+    int dev_num = esp_bt_gap_get_bond_device_num();
+    if (dev_num == 0) {
+        ESP_LOGD(TAG, "No bonded devices found.");
+        return;
+    }
+
+    esp_bd_addr_t *dev_list = (esp_bd_addr_t *)malloc(sizeof(esp_bd_addr_t) * dev_num);
+    if (dev_list == NULL) {
+        ESP_LOGE(TAG, "Failed to allocate memory for bonded device list.");
+        return;
+    }
+
+    if (esp_bt_gap_get_bond_device_list(&dev_num, dev_list) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to get bonded device list.");
+        free(dev_list);
+        return;
+    }
+
+    for (int i = 0; i < dev_num; i++) {
+        esp_err_t err = esp_bt_gap_remove_bond_device(dev_list[i]);
+        if (err == ESP_OK) {
+            ESP_LOGI(TAG, "Removed bonded device: %02x:%02x:%02x:%02x:%02x:%02x",
+                     dev_list[i][0], dev_list[i][1], dev_list[i][2], dev_list[i][3], dev_list[i][4], dev_list[i][5]);
+        } else {
+            ESP_LOGE(TAG, "Failed to remove bonded device: %02x:%02x:%02x:%02x:%02x:%02x, error: %s",
+                     dev_list[i][0], dev_list[i][1], dev_list[i][2], dev_list[i][3], dev_list[i][4], dev_list[i][5], esp_err_to_name(err));
+        }
+    }
+
+    free(dev_list);
+    ESP_LOGD(TAG, "All bonded Bluetooth devices removed.");
+}
