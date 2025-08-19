@@ -18,6 +18,7 @@
 #include "esp_gap_bt_api.h"
 #include "bt_app_core.h"
 #include "tools.h"
+#include "nvs_utilities.h"
 
 static const char *TAG = "btappcore";
 
@@ -214,5 +215,6 @@ void bt_forget_bonds(void)
     }
 
     free(dev_list);
+    clear_nvs_key("paired_devices");
     ESP_LOGD(TAG, "All bonded Bluetooth devices removed.");
 }

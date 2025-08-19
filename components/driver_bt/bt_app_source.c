@@ -20,9 +20,18 @@
 #include "messaging.h"
 #include "cJSON.h"
 #include "tools.h"
+#include "nvs_utilities.h"
 
 static const char * TAG = "bt_app_source";
 static const char * BT_RC_CT_TAG="RCCT";
+
+extern const char current_namespace[];
+extern const char settings_partition[];
+
+typedef struct {
+    uint8_t mac[6];
+    char name[ESP_BT_GAP_MAX_BDNAME_LEN + 1];
+} paired_device_t;
 extern int32_t 	output_bt_data(uint8_t *data, int32_t len);
 extern void 	output_bt_tick(void);
 extern void 	output_bt_stop(void);
@@ -30,6 +39,9 @@ extern void 	output_bt_start(void);
 extern char*	output_state_str(void);
 extern bool		output_stopped(void);
 extern bool is_recovery_running;
+
+static esp_err_t save_paired_devices_to_nvs(const paired_device_t* devices, size_t count);
+static esp_err_t load_paired_devices_from_nvs(paired_device_t** devices, size_t* count);
 
 static void bt_app_av_state_connecting(uint16_t event, void *param);
 static void filter_inquiry_scan_result(esp_bt_gap_cb_param_t *param);
@@ -100,6 +112,9 @@ static int prev_duration=10000;
 static esp_avrc_rn_evt_cap_mask_t s_avrc_peer_rn_cap;
 static int s_connecting_intv = 0;
 cJSON * peers_list=NULL;
+
+static paired_device_t* s_paired_devices = NULL;
+static size_t s_paired_devices_count = 0;
 
 static struct {
 	char * sink_name;
@@ -219,6 +234,8 @@ void set_a2dp_media_state(int new_state){
 
 void hal_bluetooth_init(const char * options)
 {
+	load_paired_devices_from_nvs(&s_paired_devices, &s_paired_devices_count);
+
 	struct {
 		struct arg_str *sink_name;
 		struct arg_end *end;
@@ -368,6 +385,26 @@ static void bt_app_gap_cb(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *pa
     	if (param->auth_cmpl.stat == ESP_BT_STATUS_SUCCESS) {
             ESP_LOGI(TAG,"authentication success: %s", param->auth_cmpl.device_name);
             //esp_log_buffer_hex(param->auth_cmpl.bda, ESP_BD_ADDR_LEN);
+
+            int num_devices = esp_bt_gap_get_bond_device_num();
+            if (num_devices > 0) {
+                paired_device_t* paired_devices = malloc(sizeof(paired_device_t) * num_devices);
+                if (paired_devices) {
+                    esp_bd_addr_t *bond_dev_list = (esp_bd_addr_t *)malloc(sizeof(esp_bd_addr_t) * num_devices);
+                    if (bond_dev_list) {
+                        esp_bt_gap_get_bond_device_list(&num_devices, bond_dev_list);
+                        for (int i = 0; i < num_devices; i++) {
+                            memcpy(paired_devices[i].mac, bond_dev_list[i], sizeof(esp_bd_addr_t));
+                            // For simplicity, we'll just use a placeholder for the name.
+                            // A more complete implementation would look up the device name.
+                            snprintf(paired_devices[i].name, ESP_BT_GAP_MAX_BDNAME_LEN + 1, "Paired Device %d", i);
+                        }
+                        save_paired_devices_to_nvs(paired_devices, num_devices);
+                        free(bond_dev_list);
+                    }
+                    free(paired_devices);
+                }
+            }
         } else {
             ESP_LOGE(TAG,"authentication failed, status:%d", param->auth_cmpl.stat);
         }
@@ -1065,4 +1102,37 @@ static void bt_av_hdl_avrc_ct_evt(uint16_t event, void *p_param)
         ESP_LOGE(BT_RC_CT_TAG, "%s unhandled evt %d", __func__, event);
         break;
     }
+}
+
+
+
+esp_err_t save_paired_devices_to_nvs(const paired_device_t* devices, size_t count) {
+    esp_err_t err = store_nvs_value_len(NVS_TYPE_BLOB, "paired_devices", (void*)devices, count * sizeof(paired_device_t));
+    if (err == ESP_ERR_NVS_NOT_ENOUGH_SPACE) {
+        ESP_LOGE(TAG, "Not enough space in NVS to save paired devices");
+    } else if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to save paired devices to NVS: %s", esp_err_to_name(err));
+    } else {
+        ESP_LOGI(TAG, "Paired devices saved to NVS");
+        ESP_LOGD(TAG, "Dumping paired devices from NVS:");
+        for (size_t i = 0; i < count; i++) {
+            ESP_LOGD(TAG, "  Device %zu: MAC=%02x:%02x:%02x:%02x:%02x:%02x, Name=%s",
+                     i,
+                     devices[i].mac[0], devices[i].mac[1], devices[i].mac[2],
+                     devices[i].mac[3], devices[i].mac[4], devices[i].mac[5],
+                     devices[i].name);
+        }
+    }
+    return err;
+}
+
+esp_err_t load_paired_devices_from_nvs(paired_device_t** devices, size_t* count) {
+    size_t size = 0;
+    *devices = get_nvs_value_alloc_for_partition(settings_partition, current_namespace, NVS_TYPE_BLOB, "paired_devices", &size);
+    if (*devices) {
+        *count = size / sizeof(paired_device_t);
+        ESP_LOGI(TAG, "Loaded %d paired devices from NVS", *count);
+        return ESP_OK;
+    }
+    return ESP_FAIL;
 }
